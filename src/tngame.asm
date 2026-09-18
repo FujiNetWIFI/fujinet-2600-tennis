@@ -39,6 +39,7 @@ TNBANK  EQU     BANKGAME
 ; trampoline must be at $1015 exactly -- that is the address the stock game
 ; jumps to and falls into.
         INCLUDE "tnstart.inc"
+        INCLUDE "tngate.inc"
 
         IF      * > $1168
         ERROR   "hole A has overrun the resume point at $1168"

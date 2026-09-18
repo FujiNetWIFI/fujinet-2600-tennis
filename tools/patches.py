@@ -81,11 +81,122 @@ LF004:  jmp     TNCLR
 TNWRES: jmp     TNRESUM"""),
 ]
 
-# No input patches yet. Milestone 2 is the split alone: the game still reads
-# its own console, and `make det` has to prove the split plays exactly like the
-# 1981 cartridge before there is any netcode for a later difference to be
-# blamed on.
-INPUTS = []
+# ---------------------------------------------------------------------------
+# Milestone 3: the shim. Every console port read becomes a read of a RAM
+# shadow, and the shadows are filled in one place -- TNLOC0 locally, TNMIX in a
+# match. `make inputs` is the proof: after this, every read of a port in a whole
+# run comes from the shim and the game's own five sites are gone.
+#
+# EVERY SWCHA/SWCHB SITE IS ABSOLUTE, so redirecting it to a zero-page shadow
+# through ABSOLUTE addressing keeps all three bytes. `>` is AS's force-long
+# prefix; without it `LDA TNSWB` assembles to two bytes, every byte after it
+# moves, and check_patch reports the entire rest of the bank rather than the one
+# thing that is wrong. (AS has `<`/`>` as ADDRESSING-MODE prefixes and not as
+# lo/hi-byte operators -- two different things wearing the same character.)
+# ---------------------------------------------------------------------------
+
+INPUTS = [
+    dict(
+        name="$F051: the spin becomes the network machine's step loop",
+        line=90, nlines=2, addr=0xF051, size=0,
+        old="""LF051: LDA    INTIM
+	BNE    LF051   """,
+        new="""; The one timed band ends here, and this is the whole hook. TNWAIT does the
+; shim, then runs the transport in bounded micro-steps for as long as INTIM
+; says there is room, then spins out the rest exactly as stock did.
+;
+; IT MUST RETURN WITH A = 0, because $F05A's `STA VBLANK` uses the accumulator
+; the stock spin left at zero. TNWAIT's last instruction pair is that spin.
+;
+; The two NOPs are the two bytes `BNE LF051` occupied. Four cycles, spent
+; after the timer has already expired and immediately before a `STA WSYNC`
+; that waits out the line regardless -- so they are free, and `make frames`
+; is what says so rather than this comment.
+LF051:	JSR  TNWAIT
+	NOP
+	NOP"""),
+
+    dict(
+        name="$F170: the frame counters move behind the lockstep gate",
+        line=237, nlines=6, addr=0xF170, size=0,
+        old="""	INC    $84
+	BNE    LF17B
+	INC    $88
+	BNE    LF17B
+	SEC
+	ROR    $88     """,
+        new="""; Eleven bytes become three and eight of filler. These two counters pace the
+; simulation -- $84 bit 0 is the half-speed frame skip for variations 2 and 3,
+; $84 bit 6 dithers the computer opponent, $88 is the attract timeout -- and
+; they sit ahead of the gate, so in stock they advance on every frame the
+; television draws. Behind the gate they advance once per tick that RAN, which
+; is what two consoles can agree about.
+;
+; THE JMP IS NOT DECORATION. Filler is only inert if nothing reaches it, and a
+; JSR returns to the byte after it -- so without the jump the CPU executes the
+; padding. $FF IS NOT A NOP: it is the undocumented ISC abs,X, a
+; read-modify-write, and `ISC $FFFF,X` with the X = $03 that is live here
+; addresses $0002. That is WSYNC, strobed three times per instruction, twice
+; per frame. The first build of this patch measured 268 scanlines instead of
+; 262 -- and painted the screen black, because $83, the attract colour mask,
+; was one of the cells the runaway wrote on its way through.
+;
+; $F17B is a branch target twice over and has to stay where it is, so the
+; padding stays too; the jump is what makes it unreachable.
+	JSR  TNFCNT
+	JMP  LF17B
+	DB   $FF,$FF,$FF,$FF,$FF"""),
+
+    dict(
+        name="$F1A5: the stall gate, in front of the RESET and SELECT tests",
+        line=266, nlines=3, addr=0xF1A5, size=0,
+        old="""	PLA
+	LSR
+	BCS    LF1AE   """,
+        new="""; Four bytes become three and one of filler. TNSTGATE pulls the SWCHB byte
+; $F17F pushed -- unconditionally, because the PHA runs on every frame the
+; television draws and a gate that leaked a byte of stack per stalled frame
+; would be a wild jump inside two seconds -- and then either lets the logic
+; run or jumps straight to the display half.
+;
+; $F1A9 and $F1AE are reached by name (TNRST, TNSEL) rather than by falling
+; through, and both are still stock bytes: $F1AB is `LF1AB`, a branch target
+; from $F1D4, so this patch stops at $F1A8.
+	JMP  TNSTGATE
+	DB   $FF"""),
+
+    dict(name="$F02B: LDA SWCHB -> LDA TNSWB (the colour and B&W tables)",
+         line=73, nlines=1, addr=0xF02B, size=0,
+         old="LF02B: LDA    SWCHB   ",
+         new="LF02B:	LDA  >TNSWB            ; was SWCHB"),
+
+    dict(name="$F17C: LDA SWCHB -> LDA TNSWB (pushed, for RESET and SELECT)",
+         line=244, nlines=1, addr=0xF17C, size=0,
+         old="	LDA    SWCHB   ",
+         new="	LDA  >TNSWB            ; was SWCHB"),
+
+    dict(name="$F1F9: LDA SWCHB -> LDA TNSWB (the per-player difficulty)",
+         line=310, nlines=1, addr=0xF1F9, size=0,
+         old="	LDA    SWCHB   ",
+         new="	LDA  >TNSWB            ; was SWCHB"),
+
+    dict(name="$F203: LDA SWCHA -> LDA TNSWA (both sticks, once per player)",
+         line=314, nlines=1, addr=0xF203, size=0,
+         old="	LDA    SWCHA   ",
+         new="	LDA  >TNSWA            ; was SWCHA"),
+
+    dict(
+        name="$F376: LDY INPT4,X -> LDY TNTRIG,X, the only trigger read",
+        line=521, nlines=1, addr=0xF376, size=0,
+        old="	LDY    REFP1,X ",
+        # DiStella names the register by the address, and $0C is INPT4 on a
+        # READ and REFP1 on a WRITE. The shadow pair is zero page in the RIOT
+        # where INPT4 is zero page in the TIA, so this is the same opcode and
+        # the same four cycles. X is the PORT index: $F364-$F368 computes
+        # `$CA EOR $D0`, which turns the serving player's court index into the
+        # console port their trigger is actually plugged into.
+        new="	LDY  TNTRIG,X          ; was INPT4,X (DiStella spells $0C REFP1)"),
+]
 
 # ---------------------------------------------------------------------------
 # REWRITTEN -- ranges where wholesale change is expected and byte-level
@@ -100,7 +211,16 @@ REWRITTEN = [
 # SPANS -- every other changed byte, as (address, length, why). check_patch.py
 # allows a difference here and NOWHERE else, and fails if any of these spans
 # turns out to be unchanged.
-SPANS = []
+SPANS = [
+    (0xF02B, 3, "LDA SWCHB -> LDA TNSWB"),
+    (0xF051, 5, "the spin becomes the network machine's step loop"),
+    (0xF170, 11, "the frame counters move behind the lockstep gate"),
+    (0xF17C, 3, "LDA SWCHB -> LDA TNSWB"),
+    (0xF1A5, 4, "the stall gate, in front of the RESET and SELECT tests"),
+    (0xF1F9, 3, "LDA SWCHB -> LDA TNSWB"),
+    (0xF203, 3, "LDA SWCHA -> LDA TNSWA"),
+    (0xF376, 2, "LDY INPT4,X -> LDY TNTRIG,X"),
+]
 
 
 # Two addresses DiStella never labelled, because nothing branches to them.
@@ -111,6 +231,8 @@ LANDINGS = [
     (0xF168, 0xA2, "TNRESUM: LDX #$03, where the game bank resumes after the "
                    "display half's 24-line tail"),
     (0xF051, 0xAD, "TNSPIN: LDA INTIM, the spin that ends the one timed band"),
+    (0xF1A9, 0xA2, "TNRST: LDX #$85, stock's RESET arm"),
+    (0xF1AE, 0x4A, "TNSEL: LSR, stock's SELECT test"),
 ]
 
 

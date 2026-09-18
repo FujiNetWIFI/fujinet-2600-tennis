@@ -50,6 +50,10 @@ TNKENT: cld
         lda     #BANKGAME
         jmp     TNGOTO
 
+        INCLUDE "tninput.inc"
+        INCLUDE "tncap.inc"
+        INCLUDE "tnnet.inc"
+
         IF      * > $1497
         ERROR   "seam B and the netcode have overrun the sprite positioner at $1497"
         ENDIF

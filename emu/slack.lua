@@ -1,66 +1,51 @@
--- slack.lua -- how much vertical blank is left when the kernel starts waiting?
+-- slack.lua -- how many cycles the one timed band actually has left.
 --
--- This is the number the whole netcode is budgeted against, and it is measured
--- rather than assumed. Combat has NO OVERSCAN -- its kernel runs to the last
--- line of the frame -- so the only place injected code can go is TNUT's wait
--- for the vertical-blank timer to expire, and how much of it there is depends
--- on what the game logic did that frame. A SELECT press runs ClearMem and
--- InitPF as well, and that is the worst frame in the game.
+-- Tennis arms TIM64T at $F1A2 with $2D -- 2880 cycles -- and spins it out at
+-- $F051, with the whole game logic and the per-frame display setup in between.
+-- The netcode lives in what is left. This measures it, on stock and on the
+-- build, because PORTING.md's rule is that both numbers are measured and
+-- neither is assumed.
 --
--- INTIM counts down every 64 cycles, so the value read AT THE GATE times 64 is
--- the cycles remaining. The gate itself is TNGATE = 8, chosen so that a step
--- worth about 310 cycles always fits in the 448 the gate guarantees.
+-- INTIM is read ONLY by that spin, so the first read of each frame is the
+-- answer: multiply by 64 and that is the slack in cycles. (Below 1 the timer
+-- has already underflowed and the answer is zero or worse -- which is the
+-- case the gate is really for.)
 --
---   ./run.sh combat slack
+--   SLOT=a26_2k_4k ./run.sh stock slack
+--   ./run.sh tennis slack
+local FLOOR = tonumber(os.getenv("SLACK_FLOOR") or "") or 8
 
-dofile(os.getenv("A2600_EMU") .. "/det.lua")
-
-local GATE = 8
 local sp = manager.machine.devices[":maincpu"].spaces["program"]
-local cpu = manager.machine.devices[":maincpu"]
+local frames, worst, total, zero = 0, 255, 0, 0
+local pending = true
 
-local first, hist, frames = {}, {}, 0
-local steps, stepframes = 0, {}
-
--- The FIRST read of INTIM in a frame is the one that matters: it is the slack
--- the whole hook has to live inside. Later reads are the loop going round.
-local seen_this_frame = false
-_G._sl_intim = sp:install_read_tap(0x0284, 0x0284, "intim", function(off, data, mask)
-    if not seen_this_frame then
-        seen_this_frame = true
-        hist[data] = (hist[data] or 0) + 1
-    end
-end)
-
--- CXCLR is strobed once a frame, right after the wait ends.
-_G._sl_frame = sp:install_write_tap(0x2C, 0x2C, "cxclr", function(off, data, mask)
+_G._sl = sp:install_read_tap(0x0284, 0x0284, "intim", function(off, data, mask)
+    if not pending then return end      -- only the FIRST read of the frame
+    pending = false
     frames = frames + 1
-    seen_this_frame = false
+    if data < worst then worst = data end
+    total = total + data
+    if data == 0 then zero = zero + 1 end
 end)
 
-_G._sl_stop = emu.add_machine_stop_notifier(function()
-    local keys, total, n, lo, hi = {}, 0, 0, 255, 0
-    for k, v in pairs(hist) do
-        keys[#keys + 1] = k; total = total + k * v; n = n + v
-        if k < lo then lo = k end
-        if k > hi then hi = k end
-    end
-    table.sort(keys)
-    local out, below = {}, 0
-    for _, k in ipairs(keys) do
-        out[#out + 1] = string.format("%d:%d", k, hist[k])
-        if k < GATE then below = below + hist[k] end
-    end
-    print("FRAMES " .. frames)
-    print("INTIM AT THE GATE " .. table.concat(out, " "))
-    if n > 0 then
-        print(string.format(
-            "SLACK min=%d (%d cycles)  mean=%.1f (%d cycles)  max=%d (%d cycles)",
-            lo, lo * 64, total / n, math.floor(total / n) * 64, hi, hi * 64))
-        print(string.format(
-            "FRAMES BELOW THE GATE (%d): %d of %d (%.1f%%) -- these run no "
-            .. "network step at all, which is the right answer: a tick may be a "
-            .. "frame late and the lockstep is built to absorb exactly that.",
-            GATE, below, n, 100.0 * below / n))
+-- The frame boundary that re-arms the sampler is the timer write, which
+-- happens exactly once per frame at $F1A2 and cannot be confused with
+-- anything else -- the RAM clear sweeps the TIA but never the RIOT's $0296.
+_G._sl2 = sp:install_write_tap(0x0296, 0x0296, "tim64t", function()
+    pending = true
+end)
+
+_G._sl_end = emu.add_machine_stop_notifier(function()
+    if frames == 0 then print("SLACK FAIL: no frames sampled"); return end
+    print(string.format(
+        "SLACK %d frames: worst %d ticks = %d cycles, mean %.1f ticks = %d cycles, %d exhausted",
+        frames, worst, worst * 64, total / frames,
+        math.floor(total / frames) * 64, zero))
+    if worst >= FLOOR then
+        print(string.format("SLACK PASS -- the floor is %d ticks (%d cycles) "
+                            .. "and the worst frame left %d", FLOOR, FLOOR * 64, worst))
+    else
+        print(string.format("SLACK FAIL -- the worst frame left %d ticks, "
+                            .. "under the floor of %d", worst, FLOOR))
     end
 end)
