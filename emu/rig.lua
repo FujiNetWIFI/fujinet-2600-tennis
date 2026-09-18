@@ -113,6 +113,19 @@ _G._rg_drive = emu.add_machine_frame_notifier(function()
         -- the guest presses nothing at all
     elseif os.getenv("RIG_HOLD") == "select" then
         if ticks >= 30 and ticks < 400 then want = "Select Game" end
+    elseif os.getenv("RIG_HOLD") == "serve" then
+        -- RIG_HOLD=serve: RESET over and over, which is Tennis's analogue of
+        -- Dragster's rig-stage. Every press runs the game's own clear from
+        -- $85 -- `LDX #$85 / JMP LF004` at $F1A9 -- and that loop used to run
+        -- all the way to $FF through a `STY $00,X` that wraps inside page
+        -- zero. It is bounded at $D6 now, and tools/check_zp.py proves the
+        -- bound is a symbol rather than a literal; THIS proves it holds while
+        -- two consoles are actually playing, hundreds of times over.
+        --
+        -- A press every sixteen ticks, held for four: long enough for the
+        -- ANDed switch to reach both machines through the delay ring, short
+        -- enough that the game restarts rather than sitting held.
+        if ticks >= 30 and (ticks % 16) < 4 then want = "Reset Game" end
     elseif ticks >= 30 and ticks < 70 then want = "Select Game"
     elseif ticks >= 90 and ticks < 100 then want = "Reset Game" end
     if want ~= held then

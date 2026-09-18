@@ -15,8 +15,12 @@ import sys
 # dump has a hole in it, because $BB-$BE are the filtered LOCAL paddle
 # positions and two consoles with two hands on two paddles differ there on
 # every tick of a perfectly synchronised pair.
-CELLS = ([a for a in range(0x80, 0xB7) if a not in (0x84, 0x85)]
-         + list(range(0xCD, 0xD1)))
+# The same set emu/play.lua dumps, and it has to stay the same set: $80-$D5 is
+# the whole of Tennis's working set (the highest cell it names is $D5), less the
+# six colours, which are rebuilt every frame from the LOCAL black-and-white
+# switch, and $8A, which is scratch the netcode fills.
+CELLS = [a for a in range(0x80, 0xD6)
+         if a != 0x8A and not (0xBB <= a <= 0xC0)]
 
 # How many ticks at the end of the run must agree for a repair to count as one.
 # 120 is eight seconds at fifteen ticks a second -- long enough that a pair that
@@ -36,36 +40,36 @@ REPAIR_BOUND = 30
 # game -- that is the whole of PORTING.md 1 -- so an invented name would be a
 # lie that a future reader would then chase. A blank is honest.
 NAMES = {
-    0x88: "FrameCtrLo",   # $F07A, now behind the gate
-    0x89: "FrameCtrMid",
-    0x8A: "FrameCtrHi",
-    0x8D: "Score0",       # $F015's BCD loop reads $8D,X for X = 1, 0
-    0x8E: "Score1",
-    0x8F: "SwchbShadow",  # $F0D9
-    0x92: "PlayerA",      # the two live players; $F206 makes $93 = $92 EOR 2
-    0x93: "PlayerB",
-    0x96: "Variation",    # 0-49; SELECT walks it at $F0F8, wrapping on #$32
-    0x97: "VarFlagsLo",   # $F23A decodes the variation into these
-    0x98: "VarFlagsHi",
-    0x9B: "PlfPtr0Lo",    # the nine-byte dispatch group, $F257
-    0x9C: "PlfPtr0Hi",
-    0x9D: "PlfPtr1Lo",
-    0x9E: "PlfPtr1Hi",
-    0x9F: "PlfPtr2Lo",
-    0xA0: "PlfPtr2Hi",
-    0xA1: "CodePtr0Lo",   # JMP ($00A1), high byte forced to $F3 at $F28A
-    0xA2: "CodePtr0Hi",
-    0xA3: "CodePtr1Lo",   # JMP ($00A3)
-    0xA4: "CodePtr1Hi",
-    0xB2: "PosY0",        # the kernel compares its line counter against these
-    0xB3: "PosY1",
-    0xB4: "PosY2",
-    0xB5: "PosY3",
-    0xB6: "BallY",
-    0xCD: "VOPAD0",       # what both consoles compute from the two wire bytes
-    0xCE: "VOPAD1",
-    0xCF: "VOPAD2",
-    0xD0: "VOPAD3",
+    0x80: "Variation",   # 0-3; $81 is bit 0 of it
+    0x81: "TwoHumans",   # 0 = the computer plays one side
+    0x84: "FrameCnt",    # behind the lockstep gate
+    0x88: "Attract",
+    0x8C: "BallFracY", 0x8D: "BallFracX", 0x8E: "BallFracZ",
+    0x8F: "BallY",       # depth
+    0x90: "BallX",       # horizontal
+    0x91: "BallZ",       # HEIGHT -- gravity acts on this one
+    0x92: "BallVYhi", 0x95: "BallVYlo",
+    0x93: "BallVXhi", 0x96: "BallVXlo",
+    0x94: "BallVZhi", 0x97: "BallVZlo",
+    0x98: "P0Depth", 0x99: "P1Depth",
+    0x9A: "P0Horiz", 0x9B: "P1Horiz",
+    0xA0: "ServePend",
+    0xA2: "AutoServe",
+    0xA3: "SelDebounce",
+    0xB4: "LastStruck",
+    0xC1: "SwingFrame0", 0xC2: "SwingFrame1",
+    0xC5: "Points0", 0xC6: "Points1",
+    0xC7: "Games0", 0xC8: "Games1",
+    0xC9: "SoundTimer",
+    0xCA: "Server",
+    0xCB: "FreezeState",
+    0xCC: "Bounces",
+    0xCE: "StickDY", 0xCF: "StickDX",
+    0xD0: "EndSwap",     # flips every game: court = port EOR this
+    0xD1: "MsgMode",     # 3 DEUCE, $0A ADVANTAGE
+    0xD2: "SetCount",
+    0xD3: "Diff0", 0xD4: "Diff1",
+    0xD5: "PortIndex",
 }
 
 

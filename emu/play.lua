@@ -26,7 +26,10 @@
 -- already -- but WHICH CELL went first, and at which tick.
 
 -- Keep in step with src/vodefs.inc.
-local TNENT, TNTICK, TNERR, TNNST = 0xD3, 0xD6, 0xD5, 0xD7
+local TNENT, TNTICK, TNNST, TNERR = 0xD6, 0xD9, 0xDA, 0xD8
+local TNCRCV, TNSWA, TNSWB, TNRING, TNLOC = 0xDB, 0xE0, 0xE1, 0xE7, 0xEF
+local TNRWAT = 0xE6
+local CLOCK = 0x84
 -- This game's frame counter, which now increments only on a frame the sim
 -- advanced -- see the $F07A patch. It stands in for Combat's CLOCK.
 local CLOCK = 0x88
@@ -63,17 +66,13 @@ end
 
 local ticks, lasttick, frames = 0, nil, 0
 
--- THE PADDLE, not a stick. run.sh puts `pad` in both controller slots, and a
--- console drives its OWN left-port paddle A -- which is player 0 on the host
--- and player 2 on the guest, exactly as the netcode's role mapping says.
-local PADDLE = { ":joyport1:pad:POTX", "Paddle" }
-local TRIG = ":joyport1:pad:JOY|P1 Button 1"
-
-local function setpaddle(v)
-    local p = manager.machine.ioport.ports[PADDLE[1]]
-    local f = p and p.fields[PADDLE[2]]
-    if f then f:set_value(v) end
-end
+-- THE LEFT PORT, ON BOTH CONSOLES, WHATEVER THE ROLE. Each player sits at
+-- their own machine with one joystick in port 1; the role decides which PLAYER
+-- the byte drives and that is settled by the swap in TNNET. A harness that put
+-- the guest on port 2 would be right about nothing except the bit numbering.
+local P1 = ":joyport1:joy:JOY"
+local TRIG = P1 .. "|P1 Button 1"
+local DIRS = { "P1 Left", "P1 Right", "P1 Up", "P1 Down" }
 
 -- INPUT IS DRIVEN FROM A FRAME NOTIFIER, NEVER FROM A MEMORY TAP.
 _G._pl_drive = emu.add_machine_frame_notifier(function()
@@ -100,17 +99,18 @@ _G._pl_drive = emu.add_machine_frame_notifier(function()
     -- different periods so the two players are never doing the same thing and
     -- a swap between them would show as plainly as a desync.
     --
-    -- A TRIANGLE, not a ramp or a random walk. A paddle that jumped from one
-    -- end of its travel to the other in a frame is not a thing a hand can do,
-    -- and the ROM low-pass filters the reading anyway ($F643), so a
-    -- discontinuity would be smoothed differently depending on where in the
-    -- kernel it landed -- a harness artefact that looks exactly like a desync.
+    -- A joystick is four bits and there is nothing to smooth, so this is a
+    -- schedule rather than a waveform: each console holds one direction for a
+    -- while and then another, on periods that share no factor with the other
+    -- console's, so the two players are never doing the same thing.
+    --
+    -- THE TRIGGER IS THE SERVE. `BIT $A0 / BPL` at $F363 demands a press only
+    -- while a serve is pending, so a rally needs none and a match that never
+    -- sees one never starts.
     if ticks >= 45 then
-        local period = host and 180 or 140
-        local phase = host and 0 or 37
-        local x = ((frames + phase) % period) * 2
-        if x >= period then x = period * 2 - x end
-        setpaddle(math.floor(x * 255 / period))
+        local period = host and 53 or 37
+        local phase  = host and 0 or 19
+        want[P1 .. "|" .. DIRS[(((frames + phase) // period) % 4) + 1]] = true
         local b = host and (frames // 41) % 3 or (frames // 31) % 3
         if b == 0 then want[TRIG] = true end
     end
@@ -187,7 +187,11 @@ _G._pl_swb = sp:install_write_tap(0xD2, 0xD2, "voswb", function(off, data, mask)
 end)
 
 local nb = 0
-_G._pl = sp:install_write_tap(0x2C, 0x2C, "cxclr", function(off, data, mask)
+-- THE TIMER ARM, NOT CXCLR. Tennis never strobes a collision register -- the
+-- same fact that makes a stalled frame free -- so a tap there fires only when
+-- the RAM clear sweeps the TIA. $F1A2 writes TIM64T exactly once per frame, in
+-- the RIOT at $0296 where no clear can reach it.
+_G._pl = sp:install_write_tap(0x0296, 0x0296, "tim64t", function(off, data, mask)
     if wlo and ticks >= wlo and ticks <= whi then
         -- adv is TNADV, the gate's own verdict for this frame: $FF ran the
         -- logic chain, $00 stalled. err's high nibble is the stall run-length.
@@ -199,60 +203,65 @@ _G._pl = sp:install_write_tap(0x2C, 0x2C, "cxclr", function(off, data, mask)
         -- different inputs, and these say which side handed them over.
         local t = sp:readv_u8(TNTICK)
         local ring, loc, pad = {}, {}, {}
-        -- BOTH RINGS IN FULL, two bytes a slot: paddle then switches.
-        for i = 0, 15 do
-            ring[#ring + 1] = string.format("%02X", sp:readv_u8(0xDA + i))
-        end
+        -- BOTH RINGS IN FULL, one byte a slot: a whole console per tick.
         for i = 0, 7 do
-            loc[#loc + 1] = string.format("%02X", sp:readv_u8(0xEA + i))
+            ring[#ring + 1] = string.format("%02X", sp:readv_u8(TNRING + i))
         end
         for i = 0, 3 do
-            pad[#pad + 1] = string.format("%02X", sp:readv_u8(0xCD + i))
+            loc[#loc + 1] = string.format("%02X", sp:readv_u8(TNLOC + i))
+        end
+        for i = 0, 1 do
+            pad[#pad + 1] = string.format("%02X", sp:readv_u8(0xE2 + i))
         end
         print(string.format(
             "F t%d raw%d ph%02X adv%02X err%02X fr%02X var%02X swa%02X swb%02X rwat%d pad%s | L%s R%s",
             ticks, t, sp:readv_u8(TNENT) & 0xC0,
-            sp:readv_u8(0x83), sp:readv_u8(TNERR), sp:readv_u8(CLOCK),
-            sp:readv_u8(0x96), sp:readv_u8(0xD1), sp:readv_u8(0xD2),
-            sp:readv_u8(0xD9), table.concat(pad, ""),
+            sp:readv_u8(0xDC), sp:readv_u8(TNERR), sp:readv_u8(CLOCK),
+            sp:readv_u8(0x80), sp:readv_u8(TNSWA), sp:readv_u8(TNSWB),
+            sp:readv_u8(TNRWAT), table.concat(pad, ""),
             table.concat(loc, " "), table.concat(ring, " ")))
     end
     if (sp:readv_u8(TNENT) & 0xC0) ~= 0x40 then return end
     nb = nb + 1
     if inject and not injected and nb >= inject then
         injected = true
-        -- $8D IS A SCORE, and the choice matters more than it looks.
+        -- $C5 IS A SCORE, and the choice matters more than it looks.
         --
-        -- A Y position was the obvious pick and it is useless: $B2 is
-        -- recomputed from the paddle every frame, so a corruption there is
-        -- gone by the next tick without anything having repaired it. The
-        -- harness duly reported "recovered after 1 tick" and the relay had
+        -- A player's position was the obvious pick and it is useless: $98-$9B
+        -- are driven from the stick every tick, so a corruption there is gone
+        -- by the next one without anything having repaired it. The harness
+        -- would duly report "recovered after 1 tick" with the relay having
         -- seen nothing at all -- a test that passes itself.
         --
-        -- A score PERSISTS. It is in the checksum, nothing rewrites it, and
-        -- one is the smallest desync there is: exactly the size a real one
-        -- starts at.
-        sp:write_u8(0x8D, (sp:readv_u8(0x8D) + 1) & 0xFF)   -- Score0
-        print(string.format("INJECT tick %d: TankY0 nudged by one scanline", nb))
+        -- A score PERSISTS. $C5 is the host's points in the current game --
+        -- 0 love, 1 fifteen, 2 thirty, 3 forty -- it is in TNCRC, nothing
+        -- rewrites it but the scoring routine, and one is the smallest desync
+        -- there is: exactly the size a real one starts at.
+        sp:write_u8(0xC5, (sp:readv_u8(0xC5) + 1) & 0xFF)
+        print(string.format("INJECT tick %d: $C5, the points in this game, "
+                            .. "nudged by one", nb))
     end
     local b = {}
     -- $80-$B6 is the whole of the game's own working set that both consoles
     -- must agree about, plus TNPAD at $CD-$D0, which is what they compute from
     -- the same two wire bytes.
     --
-    -- $BB-$BE are DELIBERATELY ABSENT. They are the filtered LOCAL paddle
-    -- positions, written by the display kernel from this console's own
-    -- controller, and with two hands on two paddles they differ on every
-    -- single tick of a perfectly synchronised pair.
-    for a = 0x80, 0xB6 do
-        -- $84 and $85 are the kernel's RAW captures of this console's own two
-        -- paddles, before the filter. Local input, like $BB-$BE, and they
-        -- differ between two consoles for the same reason.
-        if a ~= 0x84 and a ~= 0x85 then
+    -- $80-$D5 is the whole of the game's working set -- the highest cell Tennis
+    -- names is $D5 -- with two ranges left out on purpose.
+    --
+    -- $BB-$C0 are the six colours, rebuilt every frame from the LOCAL
+    -- black-and-white switch. That switch stays local by design, so with two
+    -- people setting it as they please these differ on every tick of a
+    -- perfectly synchronised pair.
+    --
+    -- $8A is scratch. TNFCNT writes it from the generated fold, so it is the
+    -- same on both -- but it is not simulation state, and a cell the netcode
+    -- fills is not a cell the netcode should check.
+    for a = 0x80, 0xD5 do
+        if a ~= 0x8A and (a < 0xBB or a > 0xC0) then
             b[#b + 1] = string.format("%02X", sp:readv_u8(a))
         end
     end
-    for a = 0xCD, 0xD0 do b[#b + 1] = string.format("%02X", sp:readv_u8(a)) end
     -- The ROM's own raw tick rides along so the two numbering schemes can be
     -- checked against each other rather than trusted.
     print(string.format("S %d %d %s", nb, sp:readv_u8(TNTICK),
@@ -260,7 +269,7 @@ _G._pl = sp:install_write_tap(0x2C, 0x2C, "cxclr", function(off, data, mask)
 end)
 
 _G._pl_stop = emu.add_machine_stop_notifier(function()
-    print(string.format("PLAY tick=%d err=$%02X state=%d ent=$%02X frames=%d",
-        ticks, sp:readv_u8(TNERR), sp:readv_u8(TNNST), sp:readv_u8(TNENT),
+    print(string.format("PLAY ticks=%d err=$%02X state=%d ent=$%02X frames=%d",
+        nb, sp:readv_u8(TNERR), sp:readv_u8(TNNST), sp:readv_u8(TNENT),
         frames))
 end)
