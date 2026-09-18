@@ -310,7 +310,7 @@ TNSEAMB EQU     $1168           ; the kernel bank's trampoline to the game
 ; Two addresses DiStella never labelled, because nothing branches to them.
 ; Spelling them here means a typo is a build error rather than a jump into the
 ; middle of an instruction -- tools/patches.py asserts the opcode at each.
-TNSPIN  EQU     $1051           ; LDA INTIM, the spin that ends the timed band
+TNSPIN  EQU     $1051           ; LDA INTIM, the stock spin -- NOT patched
 TNRESUM EQU     $1168           ; LDX #$03, where the game bank resumes
 TNRST   EQU     $11A9           ; LDX #$85, stock's RESET arm
 TNSEL   EQU     $11AE           ; LSR, stock's SELECT test
@@ -319,6 +319,7 @@ TNSEL   EQU     $11AE           ; LSR, stock's SELECT test
 ; A cell and not the stack: the measured stack depth is five of the six bytes
 ; kept for it, and a gate that ran out of stack would fail as a wild jump.
 TNSAVX  EQU     $F4
+
 
 ; ---------------------------------------------------------------------------
 ; THE WIRE PROTOCOL

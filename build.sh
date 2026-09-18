@@ -140,7 +140,12 @@ fi
 
 # ---------------- M0: the conversion gate ----------------
 if [ "${1:-}" = "verify-org" ]; then
-    [ -f rom/tennis.asm ] || disasm
+    # The bytes the score kernel reads past the end of its font, folded back
+# through the 2K mirror the way the stock image does. Generated, never
+# transcribed -- see tools/mkmirror.py.
+python3 tools/mkmirror.py rom/tennis.bin > build/mirror.inc
+
+[ -f rom/tennis.asm ] || disasm
     python3 tools/checkmap.py rom/tennis.bin tools/tennis.cfg
     python3 tools/dasm2as.py rom/tennis.asm > build/tn_org.asm
     assemble tn_org build
@@ -199,6 +204,11 @@ BANKS="tnboot tngame tnkern"
     printf 'CSHNLEN EQU     %d\n' $(( ${#name} ))
     printf '        DB      "%s"\n' "$name"
 } > build/playername.inc
+
+# The bytes the score kernel reads past the end of its font, folded back
+# through the 2K mirror the way the stock image does. Generated, never
+# transcribed -- see tools/mkmirror.py.
+python3 tools/mkmirror.py rom/tennis.bin > build/mirror.inc
 
 [ -f rom/tennis.asm ] || disasm
 

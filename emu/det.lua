@@ -58,15 +58,28 @@
 -- bank blanks the text planes before it hands over, rather than leaving
 -- whatever words it last drew under the score kernel's feet.
 --
--- `make glyph` is the gate for that half: it asserts the value is CONSTANT
--- across a run. This one excludes the cell and says why, because a gate that
--- has been taught to excuse the thing it found is not a gate -- but a gate
--- that reports a known, bounded, documented difference forever is not one
--- either.
+-- SO IT IS REPRODUCED RATHER THAN EXCUSED, and $8A is back inside the range.
+-- tools/mkmirror.py generates a copy of $F069-$F0D9 into the game bank at
+-- those same addresses, and TNSTGATE writes $8A from it once a frame, before
+-- the game logic reads it. `make glyph` is what checks the two agree.
+-- $84 AND $88 ARE CARRIED SEPARATELY, not excluded. They are one 16-bit frame
+-- counter -- `INC $84 / BNE / INC $88` -- and the shim's uniform one-frame
+-- input delay (see tools/ramdiff.py) means the build restarts one frame after
+-- stock, so the counter honestly reads one higher: one more frame really has
+-- elapsed.
+--
+-- Folding them into the checksum would make that consistency indistinguishable
+-- from a divergence. Printing the PAIR in its own column lets ramdiff assert
+-- the stronger thing instead: that it differs by EXACTLY the offset, on every
+-- frame, and by nothing else. $88 has to go with $84 rather than stay in the
+-- checksum, because it is the high byte -- it moves only on the frame $84
+-- wraps, and the two builds wrap one frame apart.
 local RANGES = {
-    { 0x80, 0x89 },
-    { 0x8B, 0xD5 },
+    { 0x80, 0x83 },
+    { 0x85, 0x87 },
+    { 0x89, 0xD5 },
 }
+local FRLO, FRHI = 0x84, 0x88
 
 -- SAMPLED AT THE TIMER ARM, and the choice is the whole design of the tap.
 --
@@ -208,5 +221,6 @@ _G._det_tap = sp:install_write_tap(TIM64T, TIM64T, "tim64t", function(off, data,
             c = (c + sp:readv_u8(a)) & 0xFFFF
         end
     end
-    print(string.format("%d %04X", frame, c))
+    print(string.format("%d %04X %04X", frame, c,
+                        (sp:readv_u8(FRHI) << 8) | sp:readv_u8(FRLO)))
 end)

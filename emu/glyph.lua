@@ -14,9 +14,13 @@
 -- diverge on a rally rather than on anything the netcode did.
 --
 -- So: $8A is sampled every frame at the same point det.lua samples, and the
--- run has to report exactly one distinct value.
+-- run has to report exactly one distinct value -- and, since TNFCNT now writes
+-- it from the generated fold, that value has to be the fold. GLYPH_WANT is
+-- passed in by the Makefile out of build/mirror.inc, so the two cannot drift.
 --
 --   ./run.sh tennis glyph
+local WANT = tonumber(os.getenv("GLYPH_WANT") or "") -- nil on stock: any
+                                                     -- constant will do there
 local sp = manager.machine.devices[":maincpu"].spaces["program"]
 local seen, n, frames = {}, 0, 0
 
@@ -38,9 +42,11 @@ _G._gl_end = emu.add_machine_stop_notifier(function()
     end
     print(string.format("GLYPH %d frames, %d distinct value(s): %s",
                         frames, n, table.concat(parts, ", ")))
-    if n == 1 then
-        print("GLYPH PASS -- the out-of-bounds read is a constant")
-    else
+    if n ~= 1 then
         print("GLYPH FAIL -- it moves, so two consoles can disagree about it")
+    elseif WANT and seen[WANT] == nil then
+        print(string.format("GLYPH FAIL -- constant, but not the fold $%02X", WANT))
+    else
+        print("GLYPH PASS -- the out-of-bounds read is the constant stock folds to")
     end
 end)

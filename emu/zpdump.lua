@@ -1,5 +1,9 @@
 -- zpdump.lua -- the whole of RAM at the det sampling point, for one frame in N.
 -- Forensic only: `make det` names a frame, this says which byte.
+-- The SAME driver det.lua uses, or this compares two attract screens and
+-- agrees about nothing.
+dofile(os.getenv("A2600_EMU") .. "/det.lua")
+
 local sp = manager.machine.devices[":maincpu"].spaces["program"]
 local frame = 0
 local FROM = tonumber(os.getenv("DUMP_FROM") or "") or 1

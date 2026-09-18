@@ -97,24 +97,34 @@ TNWRES: jmp     TNRESUM"""),
 
 INPUTS = [
     dict(
-        name="$F051: the spin becomes the network machine's step loop",
-        line=90, nlines=2, addr=0xF051, size=0,
-        old="""LF051: LDA    INTIM
-	BNE    LF051   """,
-        new="""; The one timed band ends here, and this is the whole hook. TNWAIT does the
-; shim, then runs the transport in bounded micro-steps for as long as INTIM
-; says there is room, then spins out the rest exactly as stock did.
+        name="$F04C: the hook, in FRONT of the spin rather than instead of it",
+        line=88, nlines=2, addr=0xF04C, size=0,
+        old="""\tLDA    LF73F,X
+\tSTA    $B2     """,
+        new="""; THE STOCK SPIN AT $F051 IS NOT TOUCHED, and that is the whole point of
+; hooking here instead of there.
 ;
-; IT MUST RETURN WITH A = 0, because $F05A's `STA VBLANK` uses the accumulator
-; the stock spin left at zero. TNWAIT's last instruction pair is that spin.
+; The obvious patch replaces `LDA INTIM / BNE LF051` outright, and the first
+; two versions of this port did. Both were wrong in the same way and it took
+; `make frames` at twenty seconds to show it: whatever replaces those five
+; bytes has to get back to $F056 somehow, and a JSR's RTS or a JMP costs
+; cycles that are spent AFTER THE TIMER HAS EXPIRED, immediately in front of
+; `STA WSYNC`. Almost always free -- the store waits out the line anyway --
+; and about one frame in six hundred enough to push it past the end of the
+; line, giving a 263-line frame among 262s. JSR and two NOPs cost ten cycles
+; and did it every few seconds; JMP and JMP cost three and did it every four.
 ;
-; The two NOPs are the two bytes `BNE LF051` occupied. Four cycles, spent
-; after the timer has already expired and immediately before a `STA WSYNC`
-; that waits out the line regardless -- so they are free, and `make frames`
-; is what says so rather than this comment.
-LF051:	JSR  TNWAIT
-	NOP
-	NOP"""),
+; Hooking in FRONT of the spin costs nothing at all. Everything below runs
+; while the timer is still going, and the spin absorbs all of it by
+; construction -- which is the same reason the whole shim lives in a timed
+; band. The two NOPs are the two bytes `STA $B2` left over, and they are
+; before the spin too.
+;
+; TNWAIT does `LDA LF73F,X / STA $B2` itself, first, so the glyph pointer is
+; set exactly as it was and X is still $86's value when it reads the table.
+\tJSR  TNWAIT
+\tNOP
+\tNOP"""),
 
     dict(
         name="$F170: the frame counters move behind the lockstep gate",
@@ -132,17 +142,27 @@ LF051:	JSR  TNWAIT
 ; television draws. Behind the gate they advance once per tick that RAN, which
 ; is what two consoles can agree about.
 ;
-; THE JMP IS NOT DECORATION. Filler is only inert if nothing reaches it, and a
-; JSR returns to the byte after it -- so without the jump the CPU executes the
-; padding. $FF IS NOT A NOP: it is the undocumented ISC abs,X, a
-; read-modify-write, and `ISC $FFFF,X` with the X = $03 that is live here
-; addresses $0002. That is WSYNC, strobed three times per instruction, twice
-; per frame. The first build of this patch measured 268 scanlines instead of
-; 262 -- and painted the screen black, because $83, the attract colour mask,
-; was one of the cells the runaway wrote on its way through.
+; A JUMP AND NOT A CALL, and the nine cycles that saves are load-bearing.
+;
+; THIS IS THE ONE PIECE OF THE SHIM THAT IS NOT INSIDE A TIMED BAND. The band
+; is armed at $F1A2, twenty-six bytes further on, so everything here is paid
+; for out of the scanline that `STA WSYNC` at $F199 is about to end -- and a
+; line is 76 cycles. Stock spends about 45 of them on the frame $84 wraps and
+; $88 has to be incremented too. `JSR / ... / RTS / JMP LF17B` spends fifteen
+; more than `JMP / ... / JMP`, and that was enough: one 263-line frame among
+; 262s every 256 frames, which is exactly the counter's wrap, arriving every
+; 4.3 seconds like clockwork. `make frames` at twenty-five seconds is what
+; showed the period; at three it showed nothing at all.
+;
+; THE FILLER IS ONLY INERT BECAUSE NOTHING REACHES IT. $FF is not a NOP: it is
+; the undocumented ISC abs,X, a read-modify-write, and `ISC $FFFF,X` with the
+; X = $03 that is live here addresses $0002 -- WSYNC, strobed three times per
+; instruction. An earlier version of this patch left the padding reachable
+; after a JSR, measured 268 scanlines, and painted the screen black because
+; $83, the attract colour mask, was one of the cells the runaway wrote.
 ;
 ; $F17B is a branch target twice over and has to stay where it is, so the
-; padding stays too; the jump is what makes it unreachable.
+; padding stays too; the jump past it is what makes it harmless.
 	JSR  TNFCNT
 	JMP  LF17B
 	DB   $FF,$FF,$FF,$FF,$FF"""),
@@ -213,7 +233,7 @@ REWRITTEN = [
 # turns out to be unchanged.
 SPANS = [
     (0xF02B, 3, "LDA SWCHB -> LDA TNSWB"),
-    (0xF051, 5, "the spin becomes the network machine's step loop"),
+    (0xF04C, 5, "the hook, in front of the spin rather than instead of it"),
     (0xF170, 11, "the frame counters move behind the lockstep gate"),
     (0xF17C, 3, "LDA SWCHB -> LDA TNSWB"),
     (0xF1A5, 4, "the stall gate, in front of the RESET and SELECT tests"),
@@ -230,7 +250,9 @@ SPANS = [
 LANDINGS = [
     (0xF168, 0xA2, "TNRESUM: LDX #$03, where the game bank resumes after the "
                    "display half's 24-line tail"),
-    (0xF051, 0xAD, "TNSPIN: LDA INTIM, the spin that ends the one timed band"),
+    (0xF051, 0xAD, "the stock spin, which this port does NOT patch: the hook "
+                   "goes in front of it so that every cycle it costs is spent "
+                   "while the timer is still running"),
     (0xF1A9, 0xA2, "TNRST: LDX #$85, stock's RESET arm"),
     (0xF1AE, 0x4A, "TNSEL: LSR, stock's SELECT test"),
 ]

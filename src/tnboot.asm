@@ -1,8 +1,13 @@
-; tnboot.asm -- bank 0: the cold start and, later, the session.
+; tnboot.asm -- bank 0: the cold start and the session.
 ;
-; For now it is the handover and nothing else: no socket, no screens, no
-; appkeys. `make det` and `make frames` are gates about the SPLIT, and they
-; have to run before there is any netcode for a difference to be blamed on.
+; Everything that happens once, before a match, and nothing that happens during
+; one. It is the only bank that may use the session half of the zero-page union
+; -- FNDEV, FNCMD, FNNPR, FNTMO, FNCNT and the path cursor all share addresses
+; with the lockstep rings, and the two are never live at the same time because
+; this bank finishes before the game bank starts.
+;
+; It is also the only bank with a text kernel, which is why TNGONE hands back
+; here to say "OPPONENT HAS LEFT" in words.
 
         CPU     6502
         INCLUDE "vcs.inc"
@@ -14,20 +19,9 @@
 TNBANK  EQU     BANKBOOT
 
         ORG     $1000
-TNBENT:
-; Zero the whole of RAM and the TIA with it, exactly as stock's own START does
-; and for the same reason -- `STY $00,X` wraps inside page zero. Counting UP
-; from $FF would wrap past $FF into the TIA on the way, which strobes WSYNC and
-; RESP0; counting DOWN from $7F over base $80 does not.
-        lda     #0
-        ldx     #$7F
-TNBCLR: sta     $80,x
-        dex
-        bpl     TNBCLR
-        sta     TNENT
-        sta     TNWARM
-        lda     #BANKGAME
-        jmp     TNGOTO
+        INCLUDE "tnsess.inc"
+        INCLUDE "tnappk.inc"
+        INCLUDE "tndisp.inc"
 
         IF      * > $1800
         ERROR   "the boot bank has overrun the mailbox"

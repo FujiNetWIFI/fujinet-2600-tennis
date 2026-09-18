@@ -50,14 +50,36 @@ TNKENT: cld
         lda     #BANKGAME
         jmp     TNGOTO
 
+; ---------------------------------------------------------------------------
+; HOLE A, $1168-$1496: 815 bytes where the game logic lives in bank 1. Seam B's
+; trampoline has to be the first thing in it, and the transport takes the rest.
         INCLUDE "tninput.inc"
-        INCLUDE "tncap.inc"
+        INCLUDE "tnmix.inc"
         INCLUDE "tnnet.inc"
 
         IF      * > $1497
-        ERROR   "seam B and the netcode have overrun the sprite positioner at $1497"
+        ERROR   "hole A has overrun the sprite positioner at $1497"
         ENDIF
 
         INCLUDE "tennis.inc"
+
+; ---------------------------------------------------------------------------
+; HOLE B, $153B-$1617: 221 bytes where the scoring and the new-point setup live
+; in bank 1. The checksum goes here, and it is entered at the END of the
+; kernel's own region rather than at a literal, so a change that moves a
+; boundary moves this with it.
+;
+; SPLITTING THE NETCODE ACROSS TWO HOLES IS THE CHARACTER OF THIS BANK. Hole A
+; holds seam B, the shim, the mixer and the whole transport, and that comes to
+; within ten bytes of filling it. The capture and the checksum move here because
+; they are the two pieces that move most easily: each is reached by a single JSR
+; from hole A, and a JSR does not care which hole it lands in.
+        ORG     TNRE3
+        INCLUDE "tncap.inc"
+        INCLUDE "tncrc.inc"
+
+        IF      * > $1618
+        ERROR   "hole B has overrun the per-half sprite setup at $1618"
+        ENDIF
 
         END

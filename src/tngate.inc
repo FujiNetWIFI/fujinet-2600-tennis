@@ -77,6 +77,41 @@ TNSTALL:
 ; a plain rewrite that ran them on a different test would diverge somewhere
 ; a hundred frames in, by one.
 TNFCNT:
+; ---- the byte the score kernel read past the end of its font ----
+;
+; $F527's `LDA ($B2),Y` runs once per frame with Y having reached $FF and lands
+; at ($B3:$B2) + $FF. The address is a CONSTANT: $F14D is `SEC / LDA #$F6 /
+; LDX #$06` and the loop at $F154 writes that literal into $B2 eight bytes
+; before the call, on every frame, whatever the score. So the read is
+; $F7F6 + $FF = $F8F5 -- past the end of a 2K cartridge.
+;
+; Stock folds that back to $F0F5 through the mirror. The FujiNet cartridge puts
+; the MAILBOX at $1800-$1FFF, so it lands on a text plane and the value becomes
+; whatever the boot bank last drew. That is not decoration: it lands in $8A, and
+; $F396 and $F3AB use $8A to clamp the range of return angles a racket can
+; produce. Measured -- undriven planes read $FF, the clamp never fires, and
+; `make det` runs 2384 frames identical; blanked planes read $00, the clamp
+; fires on every return, and det diverges at frame 43.
+;
+; HERE AND NOT IN THE STALL GATE, and the difference is the whole of Video
+; Olympics' "reading a cell at the wrong moment is worse than not reading it".
+; Either place is before the game logic reads $8A, so either would make the
+; GAME right. Only this one is before the timer arm at $F1A2, which is where
+; `make det` and `make glyph` sample -- so only this one makes the OBSERVER
+; right as well, and a gate that reports a difference the game does not have is
+; worse than no gate.
+;
+; It runs unconditionally, because stock's kernel writes $8A on every frame the
+; television draws, stalled or not.
+;
+; TNFCNT IS ENTERED BY JMP AND LEAVES BY JMP. This is the one piece of the shim
+; outside a timed band -- $F1A2 arms the timer twenty-six bytes later -- so its
+; cycles come out of the scanline `STA WSYNC` at $F199 is about to end, and a
+; line is 76. A call and a return cost nine more than two jumps, and nine was
+; the difference between a constant 262-line frame and a 263 every 256 frames.
+        lda     #TNMIRRV
+        sta     $8A
+
         lda     TNADV
         beq     TNFC9
         inc     $84
@@ -85,4 +120,4 @@ TNFCNT:
         bne     TNFC9
         sec
         ror     $88
-TNFC9:  rts
+TNFC9:  jmp     LF17B

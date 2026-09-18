@@ -86,14 +86,15 @@ frames: build/stock.bin
 det: build/stock.bin
 	ENDPOINT="TCP://127.0.0.1:9699/" ./build.sh >/dev/null
 	@{ DET_QUIET=1 SECS=$${SECS:-40} SLOT=a26_2k_4k ./run.sh stock det 2>/dev/null || true; } \
-	    | grep -E '^[0-9]+ [0-9A-F]{4}$$' > build/det_stock.txt
+	    | grep -E '^[0-9]+ [0-9A-F]{4} [0-9A-F]{4}$$' > build/det_stock.txt
 	@{ DET_QUIET=1 SECS=$${SECS:-40} ./run.sh tennis det 2>/dev/null || true; } \
-	    | grep -E '^[0-9]+ [0-9A-F]{4}$$' > build/det_split.txt
-	python3 tools/ramdiff.py build/det_stock.txt build/det_split.txt
+	    | grep -E '^[0-9]+ [0-9A-F]{4} [0-9A-F]{4}$$' > build/det_split.txt
+	python3 tools/ramdiff.py build/det_stock.txt build/det_split.txt --from 60 --align 3
 
 # The half of the out-of-bounds read that lockstep needs: whatever the byte is,
 # it must be the same on both consoles and must stay the same. See emu/det.lua.
 glyph: tennis
+	@grep -oE "\$$[0-9A-F]{2}" build/mirror.inc | tail -1 > build/glyph_want.txt
 	@{ SECS=$${SECS:-20} ./run.sh tennis glyph 2>/dev/null || true; } | tee build/glyph.txt | grep GLYPH
 	@grep -q '^GLYPH PASS' build/glyph.txt
 

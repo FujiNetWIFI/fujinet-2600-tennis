@@ -32,7 +32,19 @@ CDTP5   EQU     $1A80
 
 CDLINES EQU     FNTROW*FNTCLH   ; 21 rows of 6 scanlines = 126
 
-; Combat measures 263 lines VSYNC-to-VSYNC, and the boot bank has to match it:
+; STOCK TENNIS MEASURES 262 LINES VSYNC-to-VSYNC, and the boot bank has to
+; match it -- not because the splash screen matters, but because the
+; peer-left screen appears in the MIDDLE of a session, long after `make frames`
+; stops excusing the handover frames. A screen of a different length there
+; should be a real finding about a real change, not a permanent discrepancy
+; that was nobody's bug and that everyone learns to ignore.
+;
+; 29, NOT Combat's 30. A frame is measured from one VSYNC WRITE to the next and
+; that write sits inside a line of its own, so the arithmetic and the
+; measurement differ by one: 3 + 37 + 33 + 126 + 33 + 29 = 261 counted, 262
+; measured. `make frames` is what says which.
+;
+; The original note, kept because it is the rule and not the number:
 ; the peer-left screen appears in the MIDDLE of a session, long after
 ; `make frames` stops excusing the handover, and a screen of a different length
 ; there would be a real finding about a real change of frame length.
@@ -42,7 +54,7 @@ CDLINES EQU     FNTROW*FNTCLH   ; 21 rows of 6 scanlines = 126
 ; next and that write sits inside a line of its own. The measurement is the one
 ; that matters; `make frames` is what settled it.
 CDVBL   EQU     37
-CDOS    EQU     30
+CDOS    EQU     29
 CDPAD   EQU     (192-CDLINES)/2 ; 33 above and below
 
 ; Two cells, both free in this bank: the boot bank runs before a match and the

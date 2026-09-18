@@ -13,11 +13,16 @@
 ; ---------------------------------------------------------------------------
 ; TNWAIT -- the hook, called from $F051 in place of the stock spin.
 ;
-; IT MUST RETURN WITH A = 0. $F05A clears VBLANK with `STA VBLANK` and the
-; accumulator the stock spin left at zero when INTIM ran out. Every path out of
-; here ends in TNWSPIN, which exits on `BNE` failing -- A = 0. That is the sort
-; of thing which works for a thousand frames and then does not.
+; IT DOES NOT HAVE TO LEAVE A = 0, and that is a consequence of hooking in
+; front of the spin rather than in place of it: the STOCK spin still runs, and
+; it is still the thing that leaves the accumulator at zero for $F05A's
+; `STA VBLANK`. Replacing the spin made that this routine's problem and cost a
+; scanline every few seconds getting back; see tools/patches.py.
+;
+; It owes the game two instructions, which is what it displaced.
 TNWAIT:
+        lda     LF73F,x         ; the score glyph pointer's low byte, with X
+        sta     $B2             ;   still holding $86's value
         jsr     TNSHIM
 
         lda     TNENT
@@ -45,9 +50,9 @@ TNWLOOP:
         jsr     TNNSTEP
         jmp     TNWLOOP
 
+; The step loop stops when the slack is gone and hands straight back; the five
+; stock bytes at $F051 then wait the timer out exactly as they always did.
 TNWSPIN:
-        lda     INTIM
-        bne     TNWSPIN
         rts
 
 ; ---------------------------------------------------------------------------

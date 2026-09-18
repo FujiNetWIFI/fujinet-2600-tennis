@@ -24,6 +24,7 @@
         INCLUDE "vcs.inc"
         INCLUDE "fujinet.inc"
         INCLUDE "cfg.inc"
+        INCLUDE "mirror.inc"
         INCLUDE "tndefs.inc"
 ; The shared transport's addresses, generated from the tail's own listing so
 ; there is no hand-kept list to go stale.
