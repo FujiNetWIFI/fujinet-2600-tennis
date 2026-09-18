@@ -1,0 +1,5 @@
+build/
+__pycache__/
+*.pyc
+rom/tennis.bin
+rom/tennis.asm
