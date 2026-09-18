@@ -70,6 +70,8 @@ TNNT2:
         lda     TNERR           ; a tick that ran clears the stall counter
         and     #$0F
         sta     TNERR
+        lda     #0
+        sta     TNSTDV          ; ...and the divider with it
 
 ; Our own byte for this tick was captured d ticks ago and has been sitting in
 ; the local ring ever since. That is the whole of delay-based lockstep: our

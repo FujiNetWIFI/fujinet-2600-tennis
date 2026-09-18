@@ -203,14 +203,26 @@ TNSSISS:
         lda     #0
         ldx     #FR_DRST
         jsr     FNRW
+
+; THE PARAMETERS ARE (1, 0) AND THEY GO THROUGH FNPB, which emits each one as
+; a SIZE byte and then its value. Written raw, the four bytes `01 00 01 00`
+; look like the family's "two one-byte params, 1,0,1,0" -- and they are not:
+; they are two parameters whose values are BOTH ZERO, because the 1s in that
+; phrase are the size bytes FNPB supplies.
+;
+; NET STATUS refuses unit 0. fujinet-pc answers `cmd:53 dlen:-1`, the reply
+; length is never valid, no record is ever read, the peer's input never
+; arrives, and after fifteen stalled ticks the console decides the peer has
+; gone and goes back to the boot bank to reconnect. Two consoles doing that to
+; each other is a match that restarts every four seconds with ZERO CRC
+; MISMATCHES in the relay log -- because everything that did run, ran in
+; lockstep. The session's own STATUS had been right all along, eight lines of
+; `jsr FNPB` away in tnsess.inc, and `dlen:4` in the same log next to
+; `dlen:-1` is what made the two comparable.
         lda     #1
-        sta     FNTX
+        jsr     FNPB
         lda     #0
-        sta     FNTX
-        lda     #1
-        sta     FNTX
-        lda     #0
-        sta     FNTX
+        jsr     FNPB
         lda     #NS_SACK
         jmp     TNLNCH
 

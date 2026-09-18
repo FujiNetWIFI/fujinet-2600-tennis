@@ -185,6 +185,29 @@ INPUTS = [
 	JMP  TNSTGATE
 	DB   $FF"""),
 
+    dict(
+        name="$F1B9: SELECT, whitelisted to the two-human variations",
+        line=277, nlines=5, addr=0xF1B9, size=0,
+        old="""LF1B9: LDY    $80
+\tINY
+\tCPY    #$04
+\tBCC    LF1C2
+\tLDY    #$00    """,
+        new="""; Nine bytes become three and six of unreachable filler. $80 runs 0-3 and
+; $81 is $80 AND 1 -- the two-humans flag that $F210 tests to skip the
+; sixty-nine bytes at $F212 which synthesise a joystick nibble for the
+; computer. Over a network a computer on one side is not a match, and it is
+; the one place in the game that invents input.
+;
+; TNVAR steps by TWO in a match, so the parity holds and only the odd
+; variations are reachable; locally it steps by one and walks all four, which
+; is what keeps `make det` a comparison against the 1981 cartridge.
+;
+; $F1C2 is `LF1C2`, a branch target from $F1BE in stock and reached by name
+; from TNVAR here, so this patch stops one byte short of it.
+LF1B9:\tJMP  TNVAR
+\tDB   $FF,$FF,$FF,$FF,$FF,$FF"""),
+
     dict(name="$F02B: LDA SWCHB -> LDA TNSWB (the colour and B&W tables)",
          line=73, nlines=1, addr=0xF02B, size=0,
          old="LF02B: LDA    SWCHB   ",
@@ -233,6 +256,7 @@ REWRITTEN = [
 # turns out to be unchanged.
 SPANS = [
     (0xF02B, 3, "LDA SWCHB -> LDA TNSWB"),
+    (0xF1B9, 9, "SELECT, whitelisted to the two-human variations"),
     (0xF04C, 5, "the hook, in front of the spin rather than instead of it"),
     (0xF170, 11, "the frame counters move behind the lockstep gate"),
     (0xF17C, 3, "LDA SWCHB -> LDA TNSWB"),
@@ -255,6 +279,7 @@ LANDINGS = [
                    "while the timer is still running"),
     (0xF1A9, 0xA2, "TNRST: LDX #$85, stock's RESET arm"),
     (0xF1AE, 0x4A, "TNSEL: LSR, stock's SELECT test"),
+    (0xF1C2, 0x84, "TNVARX: STY $80, where the SELECT handler resumes"),
 ]
 
 

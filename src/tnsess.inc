@@ -242,11 +242,29 @@ CSREAD:
 ;
 ; The variation byte is not obeyed either: Tennis has two games, SELECT is
 ; ANDed on the wire, and both consoles start at game 1 and walk together.
-        lda     FNRPLY+2        ; the role, kept as a bit of TNENT
+; THE ROLE GOES STRAIGHT INTO TNENT, and not into TNTMP, and that is the whole
+; of a bug worth remembering.
+;
+; TNTMP is the obvious place to park it: it is scratch, dead between routines,
+; and the handover is a few hundred cycles away. Except that tndisp.inc says
+; `CDPAD3 EQU TNTMP` -- the 48-pixel text kernel borrows it as its own padding
+; counter, because the boot bank runs before a match and the lockstep cells are
+; not live yet. Between the parse and the handover this bank draws a hundred
+; and fifty frames of "PLAYING" and the opponent's name.
+;
+; So the role that arrived in the START frame was replaced by whatever the
+; kernel last counted to, and BOTH consoles came up with the bit set: both
+; guests, both swapping the two wire bytes, both therefore agreeing perfectly
+; -- zero CRC mismatches, byte-identical snapshots -- and each player moving
+; the far player instead of their own. Video Olympics 3.17 is the same lesson
+; from the other end, where a RAM clear did the sweeping instead of a kernel.
+;
+; TNENT is nobody else's. It costs the same two stores.
+        lda     FNRPLY+2        ; the role
         and     #1
         asl     a
-        asl     a
-        sta     TNTMP
+        asl     a               ; -> TNE_ROLE
+        sta     TNENT
 ; The delay is CHECKED, not obeyed. It sizes the local ring at assembly time,
 ; and a console that honoured a delay its ring could not hold would overwrite a
 ; tick it had not used yet -- which is a desync that only appears under load.
@@ -332,9 +350,11 @@ CSZRING: sta    TNRING,x        ; TNRING[8] and TNLOC[4], which are contiguous
 ; into the match reading the same constant. `make glyph` is the gate.
         jsr     CDBLANK
 
-        lda     TNTMP           ; the role bit, and TNE_RAN SET so the first
-        ora     #TNE_NET|TNE_RAN ;   boundary advances $FF -> 0 and captures
-        sta     TNENT
+        lda     TNENT           ; the role bit parsed above, and TNE_RAN SET so
+        ora     #TNE_NET|TNE_RAN ;   the first boundary advances $FF -> 0 and
+        sta     TNENT            ;   captures through the same path as every
+                                 ;   later tick
+
         lda     #BANKGAME
         jmp     TNGOTO
 

@@ -17,14 +17,18 @@
 
 -- Keep in step with src/vodefs.inc. These are not Combat's addresses and
 -- nothing but this comment will tell you if they drift.
-local TNENT, TNTICK, TNNST, TNERR, TNRWAT = 0xD3, 0xD6, 0xD7, 0xD5, 0xD9
-local TNCRCV, TNSWA, TNSWB, TNRING, TNLOC = 0xD8, 0xD1, 0xD2, 0xDA, 0xEA
-local TNPAD = 0xCD
+-- Tennis's netcode cells, from src/tndefs.inc. They are NOT the sibling's:
+-- Tennis's highest cell is $D5, so this port's own block starts at $D6.
+local TNENT, TNTICK, TNNST, TNERR, TNRWAT = 0xD6, 0xD9, 0xDA, 0xD8, 0xE6
+local TNCRCV, TNSWA, TNSWB, TNRING, TNLOC = 0xDB, 0xE0, 0xE1, 0xE7, 0xEF
+local TNTRIG = 0xE2
 -- The game's own frame counter, incremented at $F07B. It stands in for
 -- Combat's CLOCK: something that moves every frame the sim advances.
-local CLOCK = 0x88
+local CLOCK = 0x84              -- Tennis's frame counter, behind the gate
 -- The variation, 0-49, and the cell SELECT walks at $F0F8.
-local VARIATION = 0x96
+-- $80 is the variation, 0-3. $81 is $80 AND 1 and is the two-humans flag; in
+-- a match SELECT steps by two so only the odd ones are reachable.
+local VARIATION = 0x80
 local SNAPTICK = tonumber(os.getenv("SNAPTICK") or "150")
 
 local sp = manager.machine.devices[":maincpu"].spaces["program"]
@@ -118,7 +122,26 @@ _G._rg_drive = emu.add_machine_frame_notifier(function()
     end
 end)
 
-_G._rg = sp:install_write_tap(0x2C, 0x2C, "cxclr", function(off, data, mask)
+-- SAMPLED AT THE TIMER ARM, NOT AT CXCLR.
+--
+-- The sibling ports sample at $F224's `STA CXCLR`, once a frame, after the
+-- logic and before the picture. TENNIS NEVER STROBES CXCLR -- it never touches
+-- a collision register at all, which is the same fact that makes a stalled
+-- frame free -- so a tap there fires only when the RAM clear sweeps the TIA on
+-- its way past, which is once per RESET and not once per frame.
+--
+-- That is not a gate that fails; it is a gate that passes on nothing. The
+-- snapshot was never taken, so `SNAP` printed "never reached the snapshot
+-- tick" on BOTH consoles, and "the two consoles agree byte for byte" compared
+-- those two identical sentences and said ok. PORTING.md 4.22, in a new
+-- disguise: a diagnostic that has never once printed a value is a broken
+-- diagnostic, not evidence.
+--
+-- $F1A2's `STY TIM64T` is the landmark Tennis does have: exactly once per
+-- frame, in the RIOT at $0296 where no clear can reach it, after the picture
+-- and after TNFCNT has moved the frame counter. The phase read here is the one
+-- TNSHIM set earlier in the same pass.
+_G._rg = sp:install_write_tap(0x0296, 0x0296, "tim64t", function(off, data, mask)
     frames = frames + 1
     -- CLOCK counts frames in which the sim ADVANCED, so a frame where it does
     -- not move is a stall and needs no cell of its own.
@@ -152,13 +175,22 @@ _G._rg = sp:install_write_tap(0x2C, 0x2C, "cxclr", function(off, data, mask)
         -- serve, the scores, the decoded variation flags, the dispatch group
         -- and the positions.
         --
-        -- $BB-$BE are NOT here: they are the filtered LOCAL paddle positions,
-        -- which differ between two consoles by design. $CD-$D0 (TNPAD) is what
-        -- both consoles compute from the same two wire bytes, and it IS here.
-        for _, a in ipairs({0x96, 0x88, 0x89, 0x8A, 0x8D, 0x8E, 0x92, 0x93,
-                            0x97, 0x98, 0x99, 0x9A,
-                            0xB2, 0xB3, 0xB4, 0xB5, 0xB6,
-                            0xCD, 0xCE, 0xCF, 0xD0}) do
+        -- WHAT IS IN HERE IS WHAT TNCRC COVERS, and for the same reasons.
+        -- The variation, the two-humans flag and the end swap first, because
+        -- two consoles that disagree about any of the three draw visibly
+        -- different games while agreeing about every coordinate. Then the
+        -- ball's three 16-bit axes and their fractions, both players'
+        -- positions, the serve state, the scores and the match state.
+        --
+        -- The shadows are NOT here. TNSWA, TNSWB and TNTRIG are what the
+        -- netcode FILLS from the wire, not state the simulation owns, and a
+        -- cell the netcode writes is not a cell the netcode should check.
+        for _, a in ipairs({0x80, 0x81, 0xD0, 0x84,
+                            0x8C, 0x8D, 0x8E, 0x8F, 0x90, 0x91,
+                            0x92, 0x93, 0x94, 0x95, 0x96, 0x97,
+                            0x98, 0x99, 0x9A, 0x9B,
+                            0xA0, 0xB4, 0xC5, 0xC6, 0xC7, 0xC8,
+                            0xCA, 0xCB, 0xCC, 0xD1, 0xD2}) do
             b[#b + 1] = string.format("%02X", sp:readv_u8(a))
         end
         -- WHAT THE TWO CONSOLES MUST AGREE ABOUT, AND WHAT THEY MUST NOT.
@@ -226,7 +258,7 @@ _G._rg_bin = sp:install_write_tap(VARIATION, VARIATION, "variation", function(of
     end
 end)
 
-_G._rg_dbn = sp:install_write_tap(0x8C, 0x8C, "seldbnce", function(off, data, mask)
+_G._rg_dbn = sp:install_write_tap(0xA3, 0xA3, "seldbnce", function(off, data, mask)
     if #dbn < 24 then
         dbn[#dbn + 1] = string.format("t%d:$%02X@c%d", rawtick(), data, sp:readv_u8(CLOCK))
     end

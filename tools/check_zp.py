@@ -30,7 +30,7 @@ import sys
 # The cells the netcode owns. Session-side cells share the same range by union.
 NETCODE = ["TNENT", "TNSEQ", "TNERR", "TNTICK", "TNNST", "TNCRCV", "TNADV",
            "TNTMP", "TNWARM", "TNCLRX", "TNSWA", "TNSWB", "TNTRIG",
-           "TNW0", "TNW1", "TNRWAT", "TNRING", "TNLOC", "TNRDN",
+           "TNW0", "TNW1", "TNSAVX", "TNSTDV", "TNRWAT", "TNRING", "TNLOC", "TNRDN",
            "FNDEV", "FNCMD", "FNNPR", "FNTMO", "FNCNT", "FNPTRL", "FNPTRH",
            "FNPCNT", "INCUR", "INPREV", "CSDLY"]
 

@@ -18,7 +18,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 HERE=$(pwd)
 
-RELAY_PORT=${RELAY_PORT:-9600}
+RELAY_PORT=${RELAY_PORT:-9602}
 BOIP1=${BOIP1:-19995}
 BOIP2=${BOIP2:-19996}
 FNPC_DIST=${FNPC_DIST:-$HOME/Workspace/fujinet-pc-rs232/build/dist}
@@ -61,7 +61,7 @@ done
 echo "== two fujinet-pc on :$BOIP1 and :$BOIP2 =="
 
 setsid python3 server/tennis_relay_server.py --host 127.0.0.1 \
-    --port "$RELAY_PORT" --delay 2 --variation "${VARIATION:-2}" \
+    --port "$RELAY_PORT" --delay 2 --variation "${VARIATION:-1}" \
     < /dev/null > build/rig/playrelay.log 2>&1 &
 sleep 1
 echo "== relay on :$RELAY_PORT  (tail -f build/rig/playrelay.log) =="

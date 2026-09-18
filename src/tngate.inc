@@ -121,3 +121,42 @@ TNFCNT:
         sec
         ror     $88
 TNFC9:  jmp     LF17B
+
+; ---------------------------------------------------------------------------
+; TNVAR -- SELECT, whitelisted to the variations two humans can actually play.
+;
+; $80 runs 0-3 and $81 is $80 AND 1. $81 is the two-humans flag: $F210's
+; `LDY $81 / BNE LF25C` is what skips the sixty-nine bytes at $F212 that
+; SYNTHESISE a joystick nibble for the computer opponent. Bit 1 of $80 is a
+; separate thing entirely -- half speed, the logic chain running only on even
+; frames.
+;
+; So of the four variations, two put a computer on one side of the net. Over a
+; network that is not a match, and it is worse than pointless: it is the one
+; place in the game that invents input, and the whole design rests on input
+; coming from exactly two places.
+;
+; The whitelist is therefore not a table but a parity: IN A MATCH SELECT STEPS
+; BY TWO, so an odd variation stays odd, and the wrap goes to 1 rather than 0.
+; Locally it steps by one and walks all four, which is what keeps `make det` a
+; comparison against the 1981 cartridge.
+;
+; Stock's nine bytes at $F1B9-$F1C1 become a jump and six of unreachable
+; filler; $F1C2 is `LF1C2`, a branch target, so the patch stops short of it and
+; this returns there by name.
+TNVAR:
+        ldy     $80
+        iny
+        lda     TNENT
+        and     #TNE_NET
+        beq     TNVAR1          ; not in a match: stock's step of one
+        iny                     ; in a match: two, so the parity holds
+TNVAR1: cpy     #$04
+        bcc     TNVAR2
+        ldy     #$00            ; stock wraps to 0...
+        lda     TNENT
+        and     #TNE_NET
+        beq     TNVAR2
+        ldy     #$01            ; ...and a match wraps to 1, because 0 is the
+                                ;   computer and this is the whole point
+TNVAR2: jmp     TNVARX

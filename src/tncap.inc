@@ -100,13 +100,27 @@ TNCAP:
 ; simulated frames on both consoles however differently they stalled.
 ;
 ; The stall count lives in TNERR's high nibble, saturating. A stall is normal;
-; fifteen in a row at four frames each is a second, and that is a peer that has
-; gone. Saturation is the ONE "the peer is gone" condition: a clean leave
-; arrives as a PEER_LEFT frame and the transport saturates this on the spot, and
-; a console that was unplugged saturates it by simply not arriving.
+; fifteen TICKS in a row at four frames each is a second, and that is a peer
+; that has gone. Saturation is the ONE "the peer is gone" condition: a clean
+; leave arrives as a PEER_LEFT frame and the transport saturates this on the
+; spot, and a console that was unplugged saturates it by simply not arriving.
+;
+; AND THE DIVIDER IS WHAT MAKES "TICKS" TRUE. The phase is not bumped on a
+; stall, so the next frame is the same boundary again and this runs once per
+; FRAME. Counting saturation straight off that makes the watchdog a QUARTER of
+; a second, not the second the comment claims -- and a quarter of a second is
+; inside the ordinary jitter of two emulators, two fujinet-pc instances and a
+; relay sharing one machine. Two consoles then give up on each other a second
+; after handover, reconnect, and do it again: a match that restarts every three
+; seconds with ZERO CRC mismatches in the relay log, because everything that
+; ran, ran in lockstep.
 TNSTALLN:
         lda     #0
         sta     TNADV
+        inc     TNSTDV
+        lda     TNSTDV
+        and     #TNKM
+        bne     TNSTA9          ; one frame in K counts
         lda     TNERR
         cmp     #$F0            ; the low nibble is an error code below $10, so
         bcc     TNSTA1          ;   this is exactly "high nibble is already $F"
@@ -114,4 +128,4 @@ TNSTALLN:
 TNSTA1: clc
         adc     #$10            ; +1 in the high nibble, low nibble untouched
         sta     TNERR
-        rts
+TNSTA9: rts

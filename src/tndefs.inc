@@ -313,12 +313,25 @@ TNSEAMB EQU     $1168           ; the kernel bank's trampoline to the game
 TNSPIN  EQU     $1051           ; LDA INTIM, the stock spin -- NOT patched
 TNRESUM EQU     $1168           ; LDX #$03, where the game bank resumes
 TNRST   EQU     $11A9           ; LDX #$85, stock's RESET arm
+TNVARX  EQU     $11C2           ; STY $80, where the SELECT handler resumes
 TNSEL   EQU     $11AE           ; LSR, stock's SELECT test
 
 ; Scratch for the stall gate, which has to hand X back exactly as it found it.
 ; A cell and not the stack: the measured stack depth is five of the six bytes
 ; kept for it, and a gate that ran out of stack would fail as a wild jump.
 TNSAVX  EQU     $F4
+
+; The stall watchdog's divider. A stall retries the SAME boundary on the next
+; frame -- the phase is deliberately not bumped, so the sim resumes the instant
+; the peer's record lands rather than up to K frames later -- which means the
+; stall path runs once per FRAME and not once per tick. Counting saturation in
+; frames makes "fifteen in a row" a quarter of a second, not the second the
+; design means, and a quarter of a second is well inside the jitter of two
+; emulators, two fujinet-pc instances and a relay sharing one machine.
+;
+; So the counter is divided by K here, and the high nibble of TNERR then really
+; does count stalled TICKS.
+TNSTDV  EQU     $F5
 
 
 ; ---------------------------------------------------------------------------

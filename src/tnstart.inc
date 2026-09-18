@@ -86,8 +86,25 @@ TNCLR1: sty     VSYNC,X         ; $00,X -- the TIA below $80, RAM above it
         sta     CTRLPF
         jsr     LF5E7
 
+; A MATCH HAS TO COME UP ON A TWO-HUMAN VARIATION, and only the cold path can
+; do it. The clear leaves $80 at zero, and $81 is $80 AND 1, so a networked
+; console that did nothing here would start with the COMPUTER playing one side
+; -- identically on both machines, which is exactly why it would look fine.
+;
+; It is guarded on cold, because the other two entries do not reach $80: the
+; RESET clear starts at $85 and the SELECT clear at $88, so the variation the
+; player chose survives both.
+        bit     TNWARM
+        bmi     TNCLR8
+        lda     TNENT
+        and     #TNE_NET
+        beq     TNCLR8
+        lda     #1
+        sta     $80
+        sta     $81
+
 ; And the warm mark, set where it cannot be missed: every path that reaches the
 ; display half from here goes through the trampoline below.
-        lda     #$80
+TNCLR8: lda     #$80
         sta     TNWARM
         jmp     TNSEAMA

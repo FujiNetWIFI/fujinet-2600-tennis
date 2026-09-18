@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."
 HERE=$(pwd)
 SECS=${1:-15}
 BOIP=${BOIP:-19995}
-RELAY_PORT=${RELAY_PORT:-9600}
+RELAY_PORT=${RELAY_PORT:-9602}
 FNPC_DIST=${FNPC_DIST:-$HOME/Workspace/fujinet-pc-rs232/build/dist}
 RIG="$HERE/build/rig/fn1"
 
