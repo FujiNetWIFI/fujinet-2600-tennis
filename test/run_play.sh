@@ -66,11 +66,12 @@ setsid python3 server/tennis_relay_server.py --host 127.0.0.1 \
 sleep 1
 echo "== relay on :$RELAY_PORT  (tail -f build/rig/playrelay.log) =="
 
-# THROUGH run.sh, NOT A SECOND COPY OF THE MAME COMMAND LINE. This used to
-# spell the arguments out again and quietly lost `-joyport1 pad -joyport2 pad`
-# in the process: two windows came up with DIGITAL JOYSTICKS in the slots of a
-# paddle game, which runs and is not the game. One place describes the
-# controller; everything else goes through it.
+# THROUGH run.sh, NOT A SECOND COPY OF THE MAME COMMAND LINE. The sibling port
+# spelled the arguments out again here and quietly lost `-joyport1 pad` in the
+# process, putting digital joysticks in the slots of a paddle game -- which
+# runs, and is not the game. Tennis wants MAME's default and so passes nothing,
+# which makes the trap invisible rather than absent: one place describes the
+# controller, and everything else goes through it.
 launch() {   # launch <n> <boip-port>
     local n=$1 port=$2
     ( setsid env FUJINET_TCP="127.0.0.1:$port" \
@@ -86,22 +87,28 @@ cat <<'MSG'
 
 == two consoles up ==
 
-  window 1 is PLAYER1, the host  -- player 0, the LEFT paddle
-  window 2 is PLAYER2, the guest -- player 2, the RIGHT paddle
+  window 1 is PLAYER1, the host  -- port 0
+  window 2 is PLAYER2, the guest -- port 1
 
-  MOVE THE MOUSE to move your paddle, in whichever window has focus. Click in
-  a window first so MAME takes the pointer; press the MAME UI key (Scroll Lock
-  by default) to give it back. PADDLE_DEVICE=keyboard uses the arrow keys
-  instead, if you would rather.
+  THE ARROW KEYS move your player and LEFT CTRL is the button, in whichever
+  window has focus. Click in a window first so MAME takes the keyboard; press
+  the MAME UI key (Scroll Lock by default) to give it back.
+
+  THE BUTTON SERVES. The game only asks for it while a serve is pending, so a
+  rally needs none.
+
+  Each window says PLAYER ONE or PLAYER TWO on its way in, and deliberately
+  does not say which END of the court you are on -- that changes. $D0 flips
+  every game and the players swap ends exactly as they do in tennis, with
+  their scores following them.
 
   RESET and SELECT (F3 and F2, or 1 and 2) work from EITHER console: the two
   are ANDed on the wire, so either player may press them and both consoles see
   the same byte on the same tick.
 
-  SELECT steps the variation, and the relay starts the pair on manual game 3 --
-  two-player Pong. The ROM only walks variations two remote players can
-  actually play: of the fifty, two are single-player and twenty-six want four
-  paddles.
+  SELECT steps the variation, and the relay starts the pair on game 1. In a
+  match the ROM walks ONLY the two-player variations -- of the four, two put
+  the computer on one side of the net, which over a network is not a match.
 
   tail -f build/rig/playrelay.log  what the relay sees
   test/stop.sh                    tear it down

@@ -7,15 +7,17 @@
 -- if Combat is really reading them the stick must move the tanks in visible
 -- steps about a second apart -- and if it is not, nothing changes at all.
 --
---   TNLAG=1 make combat && ./run.sh combat lag
+--   make lag
 
 dofile(os.getenv("A2600_EMU") .. "/det.lua")
 
-local CLOCK, TNJOY, TNSWB = 0x86, 0xCF, 0xD0
+-- $84 is Tennis's frame counter, behind the lockstep gate; TNSWA and TNSWB are
+-- the two shadows the whole game reads its console through.
+local CLOCK, TNSWA, TNSWB = 0x84, 0xE0, 0xE1
 local sp = manager.machine.devices[":maincpu"].spaces["program"]
 local writes, at, frames = 0, {}, 0
 
-_G._lg_w = sp:install_write_tap(TNJOY, TNJOY, "vojoy", function(off, data, mask)
+_G._lg_w = sp:install_write_tap(TNSWA, TNSWA, "vojoy", function(off, data, mask)
     writes = writes + 1
     local c = sp:readv_u8(CLOCK)
     at[c & 0x3F] = (at[c & 0x3F] or 0) + 1
@@ -29,7 +31,7 @@ _G._lg_stop = emu.add_machine_stop_notifier(function()
     local phases = {}
     for k, v in pairs(at) do phases[#phases + 1] = string.format("%d:%d", k, v) end
     table.sort(phases)
-    print(string.format("FRAMES %d  TNJOY writes %d (%.3f per frame)",
+    print(string.format("FRAMES %d  TNSWA writes %d (%.3f per frame)",
                         frames, writes, frames > 0 and writes / frames or 0))
     print("CLOCK phases written at: " .. table.concat(phases, " "))
     -- The claim is the RATE, not the phase count: the cold start writes once
@@ -39,7 +41,7 @@ _G._lg_stop = emu.add_machine_stop_notifier(function()
     if rate < 0.05 and frames > 300 then
         print(string.format(
             "LAG PASS: the shadows refreshed %.1f times a second, not sixty -- "
-            .. "Combat is reading them and not the ports", rate * 59.92))
+            .. "Tennis is reading them and not the ports", rate * 59.92))
     else
         print("LAG FAIL: " .. string.format("%.3f writes per frame", rate)
               .. " -- a TNLAG=0 build writes every frame, so this is not the lag build")

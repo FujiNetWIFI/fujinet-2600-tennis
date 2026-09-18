@@ -161,6 +161,86 @@ if [ "${RIG_LUA:-rig}" = "play" ]; then
     echo "PLAY FAIL"; exit 1
 fi
 
+# The interception proof, IN A MATCH. Locally `make inputs` shows every read
+# coming from TNLOC0; here the claim is the other half and it is the one that
+# matters: in a match every read must come from TNCAP, and TNLOC0 must not run
+# at all. A console still reading its own port during a match is reading an
+# input the peer will never see.
+if [ "${RIG_LUA:-rig}" = "inputs" ]; then
+    echo
+    python3 - build/rig/c1.out build/rig/c2.out build/tnkern.lst <<'PY'
+import re, sys
+
+# THE BOUNDS COME FROM THE ASSEMBLER'S OWN LISTING, never from a literal. A
+# hardcoded address that means TNCAP in one build means the middle of it in the
+# next, and the gate would go on passing.
+syms, intab = {}, False
+for line in open(sys.argv[3], errors="replace"):
+    if "Symbol Table" in line:
+        intab = True
+        continue
+    if not intab:
+        continue
+    for part in line.split("|"):
+        m = re.match(r"^\s*\*?([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([0-9A-F]{1,8})\b",
+                     part.strip())
+        if m:
+            try:
+                syms[m.group(1).upper()] = int(m.group(2), 16)
+            except ValueError:
+                pass
+
+need = ("TNLOC0", "TNCAP", "TNSTALLN", "TNMIX", "TNPHI")
+missing = [n for n in need if n not in syms]
+if missing:
+    print("  FAIL the listing has no %s" % ", ".join(missing))
+    print("INPUTS FAIL")
+    sys.exit(1)
+lo, hi = syms["TNCAP"], syms["TNSTALLN"]
+l0, l1 = syms["TNLOC0"], syms["TNCAP"]
+# TNMIX READS SWCHB ONCE A TICK ON PURPOSE, and it is not a miss. Black and
+# white stays LOCAL -- it reaches only the six colour cells and the attract
+# masks, and no colour cell reaches physics or the checksum -- so each player
+# sees their own setting, and the only way to honour that is to read the
+# switch here rather than take it off the wire.
+m0, m1 = syms["TNMIX"], syms["TNPHI"]
+print("  TNCAP $%04X-$%04X, TNMIX $%04X-$%04X, TNLOC0 $%04X-$%04X"
+      % (lo, hi - 1, m0, m1 - 1, l0, l1 - 1))
+
+fails = []
+for n, path in ((1, sys.argv[1]), (2, sys.argv[2])):
+    out = open(path, errors="replace").read()
+    sites = re.findall(r"^\s+(\w+) @ pc~\$([0-9A-F]{4})\s+x(\d+)", out, re.M)
+    print("  console %d: %d site(s)" % (n, len(sites)))
+    inloc = 0
+    for name, pc, cnt in sites:
+        a = int(pc, 16)
+        # The PC read inside a tap has already moved on, so a read at X is
+        # reported a couple of bytes past it. Widen the window rather than
+        # chase the exact instruction: what is being asked is WHICH ROUTINE.
+        where = ("TNCAP" if lo <= a <= hi + 4
+                 else "TNMIX (B&W, local by design)" if m0 <= a <= m1 + 4
+                 else "TNLOC0" if l0 <= a <= l1 + 4 else "elsewhere")
+        if where == "TNLOC0":
+            inloc += int(cnt)
+        print("    %-6s pc~$%s  x%-6s %s" % (name, pc, cnt, where))
+    def want(cond, what):
+        print(("  ok   " if cond else "  FAIL ") + what)
+        if not cond:
+            fails.append(what)
+    want(len(sites) > 0, "console %d reads its ports at all" % n)
+    want(all(lo <= int(pc, 16) <= hi + 4 or m0 <= int(pc, 16) <= m1 + 4
+             for _, pc, _ in sites),
+         "console %d reads every port from TNCAP or TNMIX's B&W" % n)
+    want(inloc == 0,
+         "console %d never runs TNLOC0 in a match" % n)
+
+print("INPUTS PASS" if not fails else "INPUTS FAIL")
+sys.exit(1 if fails else 0)
+PY
+    exit $?
+fi
+
 python3 - build/rig/c1.out build/rig/c2.out build/rig/relay.log <<'PY'
 import re, sys
 c1, c2, relay = (open(p, errors="replace").read() for p in sys.argv[1:4])

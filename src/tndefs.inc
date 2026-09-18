@@ -253,6 +253,16 @@ TNWIN   EQU     3               ; ticks of input in every record, newest first.
 ; 7 x 64 = 448 cycles remain, against a worst step of about 310.
 TNGATE  EQU     8
 
+; The interception proof's divider, used only when TNLAG is set at build time.
+; `make lag` refreshes the shadows once every TNLAGM+1 frames instead of every
+; frame, so a console that is really reading its own ports through the shim
+; answers the stick in visible steps about a second apart -- and one that has a
+; live read left somewhere goes on answering instantly. It is the DYNAMIC half
+; of the proof; emu/inputs.lua is the static half, and neither is sufficient
+; alone: a site can be patched and still be reached, and a site can be gone and
+; another one grown somewhere the scan did not look.
+TNLAGM  EQU     63              ; 64 frames, a little over a second
+
 NS_IDLE EQU     0               ; no socket, or no match: do nothing
 NS_WISS EQU     2               ; issue the WRITE and launch it
 NS_WACK EQU     4               ; wait for the cartridge to acknowledge

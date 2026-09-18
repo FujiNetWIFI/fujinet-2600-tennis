@@ -93,15 +93,21 @@ det: build/stock.bin
 
 # The half of the out-of-bounds read that lockstep needs: whatever the byte is,
 # it must be the same on both consoles and must stay the same. See emu/det.lua.
+# The value comes out of build/mirror.inc, which tools/mkmirror.py generated
+# from the dump, so the gate and the ROM cannot drift apart: if the fold ever
+# changes, both change together and neither is transcribed.
 glyph: tennis
-	@grep -oE "\$$[0-9A-F]{2}" build/mirror.inc | tail -1 > build/glyph_want.txt
-	@{ SECS=$${SECS:-20} ./run.sh tennis glyph 2>/dev/null || true; } | tee build/glyph.txt | grep GLYPH
+	@{ SECS=$${SECS:-20} GLYPH_WANT=0x$$(sed -n 's/^TNMIRRV *EQU *\$$//p' build/mirror.inc) \
+	    ./run.sh tennis glyph 2>/dev/null || true; } | tee build/glyph.txt | grep GLYPH
 	@grep -q '^GLYPH PASS' build/glyph.txt
 
 # Locally first -- every read must come from TNLOC0 -- and then in a match,
 # where every read must come from TNCAP and TNLOC0 must not run at all.
+# Locally first -- every read must come from TNLOC0 -- and then IN A MATCH,
+# where every read must come from TNCAP plus TNMIX's deliberate local
+# black-and-white read, and TNLOC0 must not run at all.
 inputs: tennis
-	@{ SECS=$${SECS:-14} ./run.sh tennis inputs || true; } | sed -n '/^SITES/,$$p'
+	@{ SECS=$${SECS:-14} DET_QUIET=1 ./run.sh tennis inputs 2>/dev/null || true; } | sed -n '/^SITES/,$$p'
 	RIG_LUA=inputs SECS=$${SECS:-25} test/run_rig.sh
 
 lag:
@@ -147,7 +153,7 @@ rig-play: tennis
 rig-repair: tennis
 	RIG_LUA=play PLAY_INJECT=120 SECS=60 test/run_rig.sh
 
-ladder: verify-org sim lobby tennis frames det glyph inputs slack \
+ladder: verify-org sim lobby tennis frames det glyph inputs lag slack \
         rig rig-hold rig-serve rig-play rig-repair
 	@echo
 	@echo "ladder: every gate passed."
